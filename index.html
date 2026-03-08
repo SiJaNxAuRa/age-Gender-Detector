@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>AI Face Scanner</title>
+
+<script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+<style>
+
+body{
+background:#050505;
+color:#00ff88;
+font-family:monospace;
+text-align:center;
+}
+
+h1{
+letter-spacing:2px;
+}
+
+#progressBox{
+width:420px;
+height:25px;
+background:#222;
+margin:auto;
+border-radius:8px;
+overflow:hidden;
+}
+
+#progressBar{
+height:100%;
+width:0%;
+background:#00ff88;
+}
+
+#container{
+position:relative;
+display:inline-block;
+margin-top:20px;
+}
+
+video{
+border-radius:10px;
+}
+
+canvas{
+position:absolute;
+top:0;
+left:0;
+}
+
+button{
+padding:10px 20px;
+font-size:16px;
+margin:10px;
+border:none;
+border-radius:6px;
+background:#00ff88;
+color:black;
+cursor:pointer;
+}
+
+#timer{
+font-size:32px;
+margin-top:10px;
+}
+
+#scanner{
+position:absolute;
+top:0;
+left:0;
+width:100%;
+height:100%;
+pointer-events:none;
+display:none;
+}
+
+.scan-line{
+position:absolute;
+width:100%;
+height:3px;
+background:#00ff88;
+box-shadow:0 0 10px #00ff88;
+animation:scanMove 2s linear infinite;
+}
+
+@keyframes scanMove{
+0%{top:0%}
+100%{top:100%}
+}
+
+.hud-text{
+position:absolute;
+bottom:10px;
+left:10px;
+font-size:18px;
+animation:flicker 1s infinite;
+}
+
+@keyframes flicker{
+0%{opacity:1}
+50%{opacity:0.3}
+100%{opacity:1}
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>AI FACE SCANNER</h1>
+
+<div id="loading">
+
+<p>Loading AI Models...</p>
+
+<div id="progressBox">
+<div id="progressBar"></div>
+</div>
+
+<p id="percent">0%</p>
+
+</div>
+
+<button id="startBtn" disabled>Start Camera</button>
+<button onclick="restart()">Restart</button>
+
+<div id="timer"></div>
+
+<div id="container">
+
+<video id="video" width="640" height="480" autoplay muted></video>
+
+<div id="scanner">
+<div class="scan-line"></div>
+<div class="hud-text">SCANNING FACE...</div>
+</div>
+
+</div>
+
+<h2 id="result"></h2>
+
+<script>
+
+const video = document.getElementById("video")
+const bar = document.getElementById("progressBar")
+const percent = document.getElementById("percent")
+const startBtn = document.getElementById("startBtn")
+const timerText = document.getElementById("timer")
+const result = document.getElementById("result")
+const scanner = document.getElementById("scanner")
+
+let ages=[]
+let detecting=false
+
+async function loadModels(){
+
+let progress=0
+
+const fake=setInterval(()=>{
+
+progress+=2
+if(progress>85)progress=85
+
+bar.style.width=progress+"%"
+percent.innerText=progress+"%"
+
+},120)
+
+await faceapi.nets.tinyFaceDetector.loadFromUri(
+"https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights"
+)
+
+await faceapi.nets.ageGenderNet.loadFromUri(
+"https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights"
+)
+
+clearInterval(fake)
+
+bar.style.width="100%"
+percent.innerText="100%"
+
+document.getElementById("loading").style.display="none"
+
+startBtn.disabled=false
+
+}
+
+loadModels()
+
+startBtn.onclick=startCamera
+
+async function startCamera(){
+
+const stream = await navigator.mediaDevices.getUserMedia({video:true})
+
+video.srcObject = stream
+
+video.addEventListener("play",()=>{
+
+const canvas = faceapi.createCanvasFromMedia(video)
+
+document.getElementById("container").append(canvas)
+
+const size = {width:video.width,height:video.height}
+
+faceapi.matchDimensions(canvas,size)
+
+detecting=true
+
+startTimer()
+
+setInterval(async()=>{
+
+if(!detecting)return
+
+const detections = await faceapi.detectAllFaces(
+video,
+new faceapi.TinyFaceDetectorOptions()
+).withAgeAndGender()
+
+const resized = faceapi.resizeResults(detections,size)
+
+canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height)
+
+faceapi.draw.drawDetections(canvas,resized)
+
+if(detections.length>0){
+
+ages.push(detections[0].age)
+
+}
+
+},200)
+
+})
+
+}
+
+function startTimer(){
+
+scanner.style.display="block"
+
+let time=10
+
+timerText.innerText="Timer: "+time
+
+const t=setInterval(()=>{
+
+time--
+
+timerText.innerText="Timer: "+time
+
+if(time<=0){
+
+clearInterval(t)
+
+finishDetection()
+
+}
+
+},1000)
+
+}
+
+function finishDetection(){
+
+detecting=false
+
+scanner.style.display="none"
+
+if(ages.length===0){
+
+result.innerText="No face detected"
+
+return
+
+}
+
+let avg=ages.reduce((a,b)=>a+b)/ages.length
+
+avg=Math.round(avg)
+
+faceapi.detectSingleFace(
+video,
+new faceapi.TinyFaceDetectorOptions()
+).withAgeAndGender().then(res=>{
+
+if(!res){
+
+result.innerText="Face lost"
+
+return
+
+}
+
+result.innerText="Age: "+avg+" | Gender: "+res.gender
+
+})
+
+}
+
+function restart(){
+
+location.reload()
+
+}
+
+</script>
+
+</body>
+</html>
